@@ -12,6 +12,50 @@ const codingProfileSchema = new mongoose.Schema({
     profileUrl:{
         type:String,
     },
+    avatar:{
+        type:String,
+        default:""
+    },
+    titlePhoto:{
+        type:String,
+        default:""
+    },
+    firstName:{
+        type:String,
+        default:""
+    },
+    lastName:{
+        type:String,
+        default:""
+    },
+    country:{
+        type:String,
+        default:""
+    },
+    city:{
+        type:String,
+        default:""
+    },
+    organization:{
+        type:String,
+        default:""
+    },
+    contribution:{
+        type:Number,
+        default:0
+    },
+    friendOfCount:{
+        type:Number,
+        default:0
+    },
+    registrationTimeSeconds:{
+        type:Number,
+        default:0
+    },
+    lastOnlineTimeSeconds:{
+        type:Number,
+        default:0
+    },
     rating:{
         type:Number,
         default:0
@@ -28,7 +72,29 @@ const codingProfileSchema = new mongoose.Schema({
         type:String,
         default:""
     },
+    rankBadge:{
+        label:{
+            type:String,
+            default:"unrated"
+        },
+        tier:{
+            type:String,
+            default:"unrated"
+        },
+        color:{
+            type:String,
+            default:"#6b7280"
+        }
+    },
     solvedCount:{
+        type:Number,
+        default:0
+    },
+    attemptedCount:{
+        type:Number,
+        default:0
+    },
+    submissionsCount:{
         type:Number,
         default:0
     },
@@ -41,6 +107,8 @@ const codingProfileSchema = new mongoose.Schema({
         default:{}
     },
 },{timestamps:true});
+
+codingProfileSchema.index({ platform: 1, handle: 1 }, { unique: true });
 
 const CodingProfile = mongoose.model('CodingProfile', codingProfileSchema);
 module.exports = CodingProfile;

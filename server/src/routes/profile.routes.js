@@ -1,8 +1,10 @@
 const express = require("express");
-const { getCodeforcesProfile } = require("../controllers/profile.controller");
+const { connectProfile, getCodeforcesProfile } = require("../controllers/profile.controller");
+const jwtAuth = require("../middleware/jwt.middleware");
 
 const router = express.Router();
 
 router.post("/codeforces", getCodeforcesProfile);
+router.post("/connect", jwtAuth, connectProfile);
 
 module.exports = router;
