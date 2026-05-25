@@ -1,8 +1,9 @@
 const Settings = () => {
   return (
-    <div>
-      <h1>Settings Page</h1>
-    </div>
+    <section className="simple-panel">
+      <h1>Platforms</h1>
+      <p>Codeforces, LeetCode, GFG and GitHub connection settings will live here.</p>
+    </section>
   );
 };
 
