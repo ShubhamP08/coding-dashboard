@@ -29,6 +29,88 @@ const extractGithubUsername = (profileLinkOrUsername) => {
   }
 };
 
+const mapTopRepos = (repos) =>
+  [...repos]
+    .sort((left, right) => {
+      const starDiff = (right.stargazers_count || 0) - (left.stargazers_count || 0);
+      if (starDiff !== 0) return starDiff;
+
+      const forkDiff = (right.forks_count || 0) - (left.forks_count || 0);
+      if (forkDiff !== 0) return forkDiff;
+
+      return new Date(right.updated_at || 0) - new Date(left.updated_at || 0);
+    })
+    .slice(0, 6)
+    .map((repo) => ({
+      id: repo.id,
+      name: repo.name,
+      fullName: repo.full_name,
+      description: repo.description || "",
+      url: repo.html_url,
+      stars: repo.stargazers_count || 0,
+      forks: repo.forks_count || 0,
+      watchers: repo.watchers_count || 0,
+      language: repo.language || "Unknown",
+      updatedAt: repo.updated_at || null,
+      isFork: Boolean(repo.fork)
+    }));
+
+const buildLanguageBreakdown = (repos) => {
+  const breakdown = repos.reduce((accumulator, repo) => {
+    const language = repo.language || "Unknown";
+    accumulator[language] = (accumulator[language] || 0) + 1;
+    return accumulator;
+  }, {});
+
+  return Object.entries(breakdown)
+    .map(([language, count]) => ({ language, count }))
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 8);
+};
+
+const buildGithubStats = (user, repos, totalStars, totalForks, languages) => ({
+  overview: [
+    {
+      key: "repos",
+      label: "Public repos",
+      value: user.public_repos || 0,
+      description: "Repositories visible on GitHub"
+    },
+    {
+      key: "followers",
+      label: "Followers",
+      value: user.followers || 0,
+      description: "People following the profile"
+    },
+    {
+      key: "following",
+      label: "Following",
+      value: user.following || 0,
+      description: "Accounts followed by this profile"
+    },
+    {
+      key: "stars",
+      label: "Stars",
+      value: totalStars,
+      description: "Stars across fetched repositories"
+    },
+    {
+      key: "forks",
+      label: "Forks",
+      value: totalForks,
+      description: "Forks across fetched repositories"
+    },
+    {
+      key: "languages",
+      label: "Languages",
+      value: languages.length,
+      description: "Unique languages used in repositories"
+    }
+  ],
+  topRepos: mapTopRepos(repos),
+  languageBreakdown: buildLanguageBreakdown(repos)
+});
+
 const fetchGithubProfile = async (profileLinkOrUsername) => {
   const username = extractGithubUsername(profileLinkOrUsername);
   const userUrl = `https://api.github.com/users/${encodeURIComponent(username)}`;
@@ -44,6 +126,7 @@ const fetchGithubProfile = async (profileLinkOrUsername) => {
   const totalStars = repos.reduce((sum, repo) => sum + (repo.stargazers_count || 0), 0);
   const totalForks = repos.reduce((sum, repo) => sum + (repo.forks_count || 0), 0);
   const languages = [...new Set(repos.map((repo) => repo.language).filter(Boolean))];
+  const stats = buildGithubStats(user, repos, totalStars, totalForks, languages);
 
   return {
     platform: "github",
@@ -72,12 +155,15 @@ const fetchGithubProfile = async (profileLinkOrUsername) => {
     attemptedCount: user.following || 0,
     submissionsCount: user.public_gists || 0,
     contestsCount: user.followers || 0,
+    stats,
     rawData: {
       user,
       repos,
       totalStars,
       totalForks,
-      languages
+      languages,
+      topRepos: stats.topRepos,
+      languageBreakdown: stats.languageBreakdown
     }
   };
 };

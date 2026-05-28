@@ -1,43 +1,55 @@
 import {
   Activity,
-  Award,
+  BarChart3,
   BookOpen,
   Code2,
   GitFork,
   Globe2,
   MessageSquare,
+  Plus,
   Star,
+  Trophy,
   Users,
   Zap
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import api from "../api/client";
+
+const getPlatformLabel = (platform) => {
+  if (platform === "github") return "GitHub";
+  if (platform === "codeforces") return "Codeforces";
+  return platform;
+};
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [profileLink, setProfileLink] = useState("");
-  const [connectedProfile, setConnectedProfile] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [profiles, setProfiles] = useState([]);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [error, setError] = useState("");
 
-  const githubData = connectedProfile?.rawData || {};
-  const githubUser = githubData.user || {};
-  const languages = useMemo(() => githubData.languages || [], [githubData.languages]);
+  const githubProfile = useMemo(
+    () => profiles.find((profile) => profile.platform === "github"),
+    [profiles]
+  );
+  const codeforcesProfile = useMemo(
+    () => profiles.find((profile) => profile.platform === "codeforces"),
+    [profiles]
+  );
+
+  const totalSolved = profiles.reduce((sum, profile) => {
+    if (profile.platform === "codeforces") return sum + (profile.solvedCount || 0);
+    return sum;
+  }, 0);
+
+  const totalRepos = githubProfile?.solvedCount || 0;
+  const totalStars = githubProfile?.rawData?.totalStars || 0;
+  const bestRating = codeforcesProfile?.maxRating || codeforcesProfile?.rating || 0;
 
   useEffect(() => {
     const loadUser = async () => {
       try {
         const response = await api.get("/users/me");
-        const githubProfile = response.data.user?.profiles?.find(
-          (profile) => profile.platform === "github"
-        );
-
-        if (githubProfile) {
-          setConnectedProfile(githubProfile);
-        }
-      // eslint-disable-next-line no-unused-vars
+        setProfiles(response.data.user?.profiles || []);
       } catch (err) {
         localStorage.removeItem("token");
         navigate("/login");
@@ -49,39 +61,6 @@ const Dashboard = () => {
     loadUser();
   }, [navigate]);
 
-  const logout = () => {
-    localStorage.removeItem("token");
-    navigate("/login");
-  };
-
-  const connectProfile = async (event) => {
-    event.preventDefault();
-    setError("");
-
-    if (!profileLink.trim()) {
-      setError("Paste your GitHub profile link first");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const response = await api.post("/profiles/connect", {
-        platform: "github",
-        profileLink
-      });
-      setConnectedProfile(response.data.data);
-    } catch (err) {
-      setError(
-        err.response?.data?.message ||
-          err.response?.data?.error ||
-          "Could not connect this GitHub profile"
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
   if (initialLoading) {
     return (
       <section className="dashboard-page">
@@ -90,7 +69,7 @@ const Dashboard = () => {
             <Activity size={22} />
           </span>
           <h1>Loading your dashboard</h1>
-          <p>Checking your account and connected GitHub profile.</p>
+          <p>Checking your account and connected platforms.</p>
         </div>
       </section>
     );
@@ -101,121 +80,78 @@ const Dashboard = () => {
       <div className="page-heading">
         <div>
           <h1>Dashboard Overview</h1>
-          <p>Your GitHub profile, repositories, followers and activity summary.</p>
+          <p>A quick summary across your connected coding platforms.</p>
         </div>
+        <Link className="ghost-compact" to="/platforms">
+          <Plus size={16} />
+          Manage Platforms
+        </Link>
       </div>
 
-      {!connectedProfile && (
+      {profiles.length === 0 && (
         <section className="empty-state">
-          <div className="empty-state-header">
-            <span className="section-icon blue">
-              <Code2 size={24} />
-            </span>
-            <button className="ghost-compact" type="button" onClick={logout}>
-              Logout
-            </button>
-          </div>
-
-          <div>
-            <h2>Connect your GitHub profile</h2>
-            <p>
-              GitHub is required for the first version of this dashboard. Paste your
-              public profile link and we will build the dashboard from GitHub API data.
-            </p>
-          </div>
-
-          <form className="connect-form" onSubmit={connectProfile}>
-            <label className="field">
-              <span>Platform</span>
-              <input value="GitHub" disabled />
-            </label>
-
-            <label className="field">
-              <span>GitHub Profile Link</span>
-              <input
-                value={profileLink}
-                onChange={(event) => setProfileLink(event.target.value)}
-                placeholder="https://github.com/username"
-              />
-            </label>
-
-            <button className="primary-button" type="submit" disabled={loading}>
-              {loading ? "Connecting..." : "Connect GitHub"}
-            </button>
-          </form>
-
-          {error && <p className="form-error">{error}</p>}
+          <span className="section-icon blue">
+            <Code2 size={24} />
+          </span>
+          <h2>Connect your first platform</h2>
+          <p>
+            Start with GitHub or Codeforces. Once connected, this page becomes your
+            summary dashboard and platform details can live on separate pages.
+          </p>
+          <Link className="primary-button as-link" to="/platforms">
+            Connect Platform
+          </Link>
         </section>
       )}
 
-      {connectedProfile && (
+      {profiles.length > 0 && (
         <>
-          <section className="github-hero">
-            <img src={connectedProfile.avatar} alt={`${connectedProfile.handle} avatar`} />
-            <div>
-              <span className="profile-platform">
-                <Code2 size={18} />
-                GitHub Connected
-              </span>
-              <h2>{connectedProfile.firstName || connectedProfile.handle}</h2>
-              <p>{githubUser.bio || "No GitHub bio added yet."}</p>
-              <div className="profile-meta">
-                <span>@{connectedProfile.handle}</span>
-                {connectedProfile.country && <span>{connectedProfile.country}</span>}
-                {connectedProfile.organization && <span>{connectedProfile.organization}</span>}
-              </div>
-            </div>
-            <a className="ghost-compact" href={connectedProfile.profileUrl} target="_blank">
-              Open GitHub
-            </a>
-          </section>
-
           <div className="stats-grid">
             <article className="stat-card">
               <div className="stat-top">
                 <span className="stat-icon blue">
-                  <BookOpen size={24} />
+                  <Globe2 size={24} />
                 </span>
-                <span className="delta">Repos</span>
+                <span className="delta">Active</span>
               </div>
-              <p>Public Repos</p>
-              <strong>{connectedProfile.solvedCount || 0}</strong>
-              <span>Repositories visible on GitHub</span>
+              <p>Platforms</p>
+              <strong>{profiles.length}</strong>
+              <span>Connected accounts</span>
             </article>
 
             <article className="stat-card">
               <div className="stat-top">
                 <span className="stat-icon orange">
-                  <Users size={24} />
+                  <BookOpen size={24} />
                 </span>
-                <span className="delta">Followers</span>
+                <span className="delta">Codeforces</span>
               </div>
-              <p>Followers</p>
-              <strong>{connectedProfile.contestsCount || 0}</strong>
-              <span>People following this profile</span>
+              <p>Recent Solved</p>
+              <strong>{totalSolved}</strong>
+              <span>From latest fetched Codeforces submissions</span>
             </article>
 
             <article className="stat-card">
               <div className="stat-top">
                 <span className="stat-icon green">
-                  <Activity size={24} />
+                  <Code2 size={24} />
                 </span>
-                <span className="delta">Following</span>
+                <span className="delta">GitHub</span>
               </div>
-              <p>Following</p>
-              <strong>{connectedProfile.attemptedCount || 0}</strong>
-              <span>Accounts this user follows</span>
+              <p>Public Repos</p>
+              <strong>{totalRepos}</strong>
+              <span>Repositories visible on GitHub</span>
             </article>
 
             <article className="stat-card">
               <div className="stat-top">
                 <span className="stat-icon purple">
-                  <Code2 size={24} />
+                  <Trophy size={24} />
                 </span>
               </div>
-              <p>Public Gists</p>
-              <strong>{connectedProfile.submissionsCount || 0}</strong>
-              <span>Public snippets shared</span>
+              <p>Best Rating</p>
+              <strong>{bestRating}</strong>
+              <span>Highest Codeforces rating</span>
             </article>
           </div>
 
@@ -224,41 +160,56 @@ const Dashboard = () => {
               <div className="section-title">
                 <div>
                   <h2>
-                    <Star size={24} />
-                    Repository Impact
+                    <BarChart3 size={24} />
+                    Platform Summary
                   </h2>
-                  <p>Latest public repositories from the GitHub API.</p>
-                </div>
-                <span className="max-pill">{githubData.totalStars || 0} Stars</span>
-              </div>
-
-              <div className="repo-summary">
-                <div>
-                  <Star size={28} />
-                  <span>Total Stars</span>
-                  <strong>{githubData.totalStars || 0}</strong>
-                </div>
-                <div>
-                  <GitFork size={28} />
-                  <span>Total Forks</span>
-                  <strong>{githubData.totalForks || 0}</strong>
-                </div>
-                <div>
-                  <Globe2 size={28} />
-                  <span>Languages</span>
-                  <strong>{languages.length}</strong>
+                  <p>Keep this page light. Use detail pages later for deeper insights.</p>
                 </div>
               </div>
 
-              <div className="repo-list">
-                {(githubData.repos || []).slice(0, 5).map((repo) => (
-                  <a key={repo.id} href={repo.html_url} target="_blank">
-                    <div>
-                      <strong>{repo.name}</strong>
-                      <span>{repo.description || "No description"}</span>
+              <div className="summary-platform-list">
+                {profiles.map((profile) => (
+                  <article className="summary-platform-card" key={profile._id}>
+                    <div className="summary-platform-head">
+                      <img src={profile.avatar || profile.titlePhoto} alt={`${profile.handle} avatar`} />
+                      <div>
+                        <span>{getPlatformLabel(profile.platform)}</span>
+                        <strong>{profile.handle}</strong>
+                      </div>
                     </div>
-                    <small>{repo.language || "Code"}</small>
-                  </a>
+
+                    {profile.platform === "github" ? (
+                      <div className="mini-stats">
+                        <span>
+                          <BookOpen size={15} />
+                          {profile.solvedCount || 0} repos
+                        </span>
+                        <span>
+                          <Star size={15} />
+                          {profile.rawData?.totalStars || 0} stars
+                        </span>
+                        <span>
+                          <GitFork size={15} />
+                          {profile.rawData?.totalForks || 0} forks
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="mini-stats">
+                        <span>
+                          <Trophy size={15} />
+                          {profile.rating || 0} rating
+                        </span>
+                        <span>
+                          <BookOpen size={15} />
+                          {profile.solvedCount || 0} recent solved
+                        </span>
+                        <span>
+                          <Activity size={15} />
+                          {profile.contestsCount || 0} contests
+                        </span>
+                      </div>
+                    )}
+                  </article>
                 ))}
               </div>
             </section>
@@ -266,41 +217,41 @@ const Dashboard = () => {
             <section className="badges-card">
               <div className="section-title">
                 <h2>
-                  <Award size={24} />
-                  GitHub Highlights
+                  <Zap size={24} />
+                  Quick Insights
                 </h2>
               </div>
 
               <div className="badge-grid">
                 <div className="badge-tile orange">
                   <Star size={30} />
-                  <strong>{githubData.totalStars || 0}</strong>
-                  <span>Stars</span>
+                  <strong>{totalStars}</strong>
+                  <span>GitHub Stars</span>
                 </div>
                 <div className="badge-tile lime">
-                  <GitFork size={30} />
-                  <strong>{githubData.totalForks || 0}</strong>
-                  <span>Forks</span>
+                  <Users size={30} />
+                  <strong>{githubProfile?.contestsCount || 0}</strong>
+                  <span>GitHub Followers</span>
                 </div>
                 <div className="badge-tile purple">
-                  <Zap size={30} />
-                  <strong>{connectedProfile.rank}</strong>
-                  <span>Type</span>
+                  <Trophy size={30} />
+                  <strong>{codeforcesProfile?.rank || "N/A"}</strong>
+                  <span>CF Rank</span>
                 </div>
                 <div className="badge-tile teal">
-                  <Globe2 size={30} />
-                  <strong>{languages[0] || "Code"}</strong>
-                  <span>Top Language</span>
+                  <BookOpen size={30} />
+                  <strong>{codeforcesProfile?.attemptedCount || 0}</strong>
+                  <span>CF Attempted</span>
                 </div>
                 <div className="badge-tile blue">
                   <Code2 size={30} />
-                  <strong>{connectedProfile.handle}</strong>
-                  <span>Handle</span>
+                  <strong>{githubProfile?.rawData?.languages?.length || 0}</strong>
+                  <span>Languages</span>
                 </div>
                 <div className="badge-tile pink">
-                  <Users size={30} />
-                  <strong>{connectedProfile.friendOfCount || 0}</strong>
-                  <span>Followers</span>
+                  <Globe2 size={30} />
+                  <strong>{profiles.length}/2</strong>
+                  <span>Available</span>
                 </div>
               </div>
             </section>

@@ -7,6 +7,21 @@ const { extractCodeforcesHandle } = require("../services/profileNormalizer.servi
 const isValidationError = (error) =>
   error.message.includes("required") || error.message.includes("Invalid");
 
+const supportedPlatforms = ["github", "codeforces"];
+
+const fetchProfileByPlatform = async (platform, profileLink) => {
+  if (platform === "github") {
+    return fetchGithubProfile(profileLink);
+  }
+
+  if (platform === "codeforces") {
+    const codeforcesHandle = extractCodeforcesHandle(profileLink);
+    return fetchCodeforcesProfile(codeforcesHandle);
+  }
+
+  throw new Error("Invalid platform");
+};
+
 const getCodeforcesProfile = async (req, res) => {
   try {
     const { handle, codeforcesProfileLink } = req.body;
@@ -52,9 +67,9 @@ const connectProfile = async (req, res) => {
       });
     }
 
-    if (selectedPlatform !== "github") {
+    if (!supportedPlatforms.includes(selectedPlatform)) {
       return res.status(400).json({
-        message: "GitHub profile is required right now"
+        message: "Only GitHub and Codeforces are available right now"
       });
     }
 
@@ -72,11 +87,11 @@ const connectProfile = async (req, res) => {
 
     if (alreadyConnected) {
       return res.status(409).json({
-        message: "GitHub is already connected. Remove it before connecting another GitHub account."
+        message: `${selectedPlatform} is already connected. Remove it before connecting another ${selectedPlatform} account.`
       });
     }
 
-    const profileData = await fetchGithubProfile(profileLink);
+    const profileData = await fetchProfileByPlatform(selectedPlatform, profileLink);
 
     const savedProfile = await CodingProfile.findOneAndUpdate(
       {
