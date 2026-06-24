@@ -1,5 +1,7 @@
 const User = require("../models/User");
+const CodingProfile = require("../models/CodingProfile");
 const bcrypt = require("bcryptjs");
+const { fetchLeetcodeProfile } = require("../services/leetcode.service");
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -7,6 +9,84 @@ const formatUser = (user) => ({
   id: user._id,
   email: user.email
 });
+
+const buildMissingStats = (profile) => {
+  if (profile.stats && Object.keys(profile.stats).length > 0) {
+    return profile;
+  }
+
+  if (!profile.rawData || !profile.rawData.repos) {
+    return profile;
+  }
+
+  const repos = profile.rawData.repos || [];
+  const topRepos = [...repos]
+    .sort((left, right) => {
+      const starDiff = (right.stargazers_count || 0) - (left.stargazers_count || 0);
+      if (starDiff !== 0) return starDiff;
+      const forkDiff = (right.forks_count || 0) - (left.forks_count || 0);
+      return forkDiff !== 0 ? forkDiff : new Date(right.updated_at || 0) - new Date(left.updated_at || 0);
+    })
+    .slice(0, 6)
+    .map((repo) => ({
+      id: repo.id,
+      name: repo.name,
+      fullName: repo.full_name,
+      description: repo.description || "",
+      url: repo.html_url,
+      stars: repo.stargazers_count || 0,
+      forks: repo.forks_count || 0,
+      watchers: repo.watchers_count || 0,
+      language: repo.language || "Unknown",
+      updatedAt: repo.updated_at || null,
+      isFork: Boolean(repo.fork)
+    }));
+
+  const languageBreakdown = Object.entries(
+    repos.reduce((acc, repo) => {
+      const lang = repo.language || "Unknown";
+      acc[lang] = (acc[lang] || 0) + 1;
+      return acc;
+    }, {})
+  )
+    .map(([language, count]) => ({ language, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+
+  profile.stats = {
+    topRepos,
+    languageBreakdown,
+    overview: profile.stats?.overview || []
+  };
+
+  return profile;
+};
+
+const shouldRefreshLeetcodeStats = (profile) => {
+  if (profile.platform !== "leetcode") return false;
+
+  const easySolved = profile.stats?.easySolved || profile.rawData?.easySolved || 0;
+  const mediumSolved = profile.stats?.mediumSolved || profile.rawData?.mediumSolved || 0;
+  const hardSolved = profile.stats?.hardSolved || profile.rawData?.hardSolved || 0;
+
+  return (profile.solvedCount || 0) === 0 && easySolved === 0 && mediumSolved === 0 && hardSolved === 0;
+};
+
+const refreshStaleLeetcodeProfile = async (profile) => {
+  if (!shouldRefreshLeetcodeStats(profile)) {
+    return profile;
+  }
+
+  try {
+    const profileData = await fetchLeetcodeProfile(profile.handle);
+
+    return CodingProfile.findByIdAndUpdate(profile._id, profileData, {
+      new: true
+    });
+  } catch {
+    return profile;
+  }
+};
 
 const register = async (req, res) => {
   try {
@@ -68,6 +148,7 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log("Login request received:", { email, password }); // Debugging log
     const normalizedEmail = email?.trim().toLowerCase();
 
     if (!normalizedEmail || !password) {
@@ -114,11 +195,25 @@ const getMe = async (req, res) => {
       });
     }
 
+    const profilesWithStats = await Promise.all(
+      user.profiles.map(async (profile) => {
+        if (profile.platform === "github") {
+          return buildMissingStats(profile);
+        }
+
+        if (profile.platform === "leetcode") {
+          return refreshStaleLeetcodeProfile(profile);
+        }
+
+        return profile;
+      })
+    );
+
     return res.status(200).json({
       success: true,
       user: {
         ...formatUser(user),
-        profiles: user.profiles
+        profiles: profilesWithStats
       }
     });
   } catch (error) {

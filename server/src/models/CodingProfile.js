@@ -102,6 +102,10 @@ const codingProfileSchema = new mongoose.Schema({
         type:Number,
         default:0
     },
+    stats:{
+        type:mongoose.Schema.Types.Mixed,
+        default:{}
+    },
     rawData:{
         type:Object,
         default:{}

@@ -1,50 +1,67 @@
 import {
   Activity,
-  Award,
-  CheckCircle2,
+  BarChart3,
+  BookOpen,
   Code2,
-  Flame,
+  GitFork,
   Globe2,
   MessageSquare,
-  ShieldCheck,
+  Plus,
   Star,
   Trophy,
+  Users,
   Zap
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import api from "../api/client";
 
-const platformOptions = [
-  { value: "codeforces", label: "Codeforces", placeholder: "https://codeforces.com/profile/tourist" },
-  { value: "leetcode", label: "LeetCode", placeholder: "https://leetcode.com/u/username/" },
-  { value: "gfg", label: "GFG", placeholder: "https://www.geeksforgeeks.org/user/username/" },
-  { value: "github", label: "GitHub", placeholder: "https://github.com/username" }
-];
+const getPlatformLabel = (platform) => {
+  if (platform === "github") return "GitHub";
+  if (platform === "codeforces") return "Codeforces";
+  if (platform === "leetcode") return "LeetCode";
+  return platform;
+};
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [platform, setPlatform] = useState("codeforces");
-  const [profileLink, setProfileLink] = useState("");
-  const [connectedProfile, setConnectedProfile] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [profiles, setProfiles] = useState([]);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [error, setError] = useState("");
 
-  const selectedPlatform = useMemo(
-    () => platformOptions.find((option) => option.value === platform),
-    [platform]
+  const githubProfile = useMemo(
+    () => profiles.find((profile) => profile.platform === "github"),
+    [profiles]
   );
+  const codeforcesProfile = useMemo(
+    () => profiles.find((profile) => profile.platform === "codeforces"),
+    [profiles]
+  );
+  const leetcodeProfile = useMemo(
+    () => profiles.find((profile) => profile.platform === "leetcode"),
+    [profiles]
+  );
+
+  const totalSolved = profiles.reduce((sum, profile) => {
+    if (profile.platform === "codeforces" || profile.platform === "leetcode") {
+      return sum + (profile.solvedCount || 0);
+    }
+
+    return sum;
+  }, 0);
+
+  const totalRepos = githubProfile?.solvedCount || 0;
+  const totalStars = githubProfile?.rawData?.totalStars || 0;
+  const bestRating =
+    codeforcesProfile?.maxRating ||
+    codeforcesProfile?.rating ||
+    leetcodeProfile?.rating ||
+    0;
 
   useEffect(() => {
     const loadUser = async () => {
       try {
         const response = await api.get("/users/me");
-        const firstProfile = response.data.user?.profiles?.[0];
-
-        if (firstProfile) {
-          setConnectedProfile(firstProfile);
-        }
+        setProfiles(response.data.user?.profiles || []);
       } catch (err) {
         localStorage.removeItem("token");
         navigate("/login");
@@ -56,35 +73,6 @@ const Dashboard = () => {
     loadUser();
   }, [navigate]);
 
-  const logout = () => {
-    localStorage.removeItem("token");
-    navigate("/login");
-  };
-
-  const connectProfile = async (event) => {
-    event.preventDefault();
-    setError("");
-
-    if (!profileLink.trim()) {
-      setError("Paste one coding profile link first");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const response = await api.post("/profiles/connect", {
-        platform,
-        profileLink
-      });
-      setConnectedProfile(response.data.data);
-    } catch (err) {
-      setError(err.response?.data?.message || err.response?.data?.error || "Could not connect this profile yet");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   if (initialLoading) {
     return (
       <section className="dashboard-page">
@@ -93,7 +81,7 @@ const Dashboard = () => {
             <Activity size={22} />
           </span>
           <h1>Loading your dashboard</h1>
-          <p>Checking your account and connected profiles.</p>
+          <p>Checking your account and connected platforms.</p>
         </div>
       </section>
     );
@@ -104,114 +92,78 @@ const Dashboard = () => {
       <div className="page-heading">
         <div>
           <h1>Dashboard Overview</h1>
-          <p>Your coding progress across all platforms</p>
+          <p>A quick summary across your connected coding platforms.</p>
         </div>
+        <Link className="ghost-compact" to="/platforms">
+          <Plus size={16} />
+          Manage Platforms
+        </Link>
       </div>
 
-      {!connectedProfile && (
+      {profiles.length === 0 && (
         <section className="empty-state">
-          <div className="empty-state-header">
-            <span className="section-icon blue">
-              <Globe2 size={22} />
-            </span>
-            <button className="ghost-compact" type="button" onClick={logout}>
-              Logout
-            </button>
-          </div>
-
-          <div>
-            <h2>Connect your coding profile</h2>
-            <p>
-              Choose one platform and paste your profile link. Codeforces works now;
-              the other platforms are ready in the UI and can be wired next.
-            </p>
-          </div>
-
-          <form className="connect-form" onSubmit={connectProfile}>
-            <label className="field">
-              <span>Platform</span>
-              <select value={platform} onChange={(event) => setPlatform(event.target.value)}>
-                {platformOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="field">
-              <span>Profile Link</span>
-            <input
-              value={profileLink}
-              onChange={(event) => setProfileLink(event.target.value)}
-                placeholder={selectedPlatform?.placeholder}
-            />
-            </label>
-
-            <button className="primary-button" type="submit" disabled={loading}>
-              {loading ? "Connecting..." : "Connect Profile"}
-            </button>
-          </form>
-
-          {error && <p className="form-error">{error}</p>}
-
-          <div className="platform-list">
-            <span>Codeforces</span>
-            <span>LeetCode</span>
-            <span>GFG</span>
-            <span>GitHub</span>
-          </div>
+          <span className="section-icon blue">
+            <Code2 size={24} />
+          </span>
+          <h2>Connect your first platform</h2>
+          <p>
+            Start with GitHub or Codeforces. Once connected, this page becomes your
+            summary dashboard and platform details can live on separate pages.
+          </p>
+          <Link className="primary-button as-link" to="/platforms">
+            Connect Platform
+          </Link>
         </section>
       )}
 
-      {connectedProfile && (
+      {profiles.length > 0 && (
         <>
           <div className="stats-grid">
             <article className="stat-card">
               <div className="stat-top">
                 <span className="stat-icon blue">
-                  <CheckCircle2 size={24} />
+                  <Globe2 size={24} />
                 </span>
-                <span className="delta">{connectedProfile.platform}</span>
+                <span className="delta">Active</span>
               </div>
-              <p>Total Solved</p>
-              <strong>{connectedProfile.solvedCount || 0}</strong>
-              <span>Accepted unique problems</span>
+              <p>Platforms</p>
+              <strong>{profiles.length}</strong>
+              <span>Connected accounts</span>
             </article>
 
             <article className="stat-card">
               <div className="stat-top">
                 <span className="stat-icon orange">
-                  <Flame size={24} />
+                  <BookOpen size={24} />
                 </span>
-                <span className="delta">{connectedProfile.rankBadge?.label || "Rank"}</span>
+                <span className="delta">Codeforces</span>
               </div>
-              <p>Current Rank</p>
-              <strong>{connectedProfile.rank || "unrated"}</strong>
-              <span>{connectedProfile.handle}</span>
+              <p>Problems Solved</p>
+              <strong>{totalSolved}</strong>
+              <span>Across Codeforces and LeetCode</span>
             </article>
 
             <article className="stat-card">
               <div className="stat-top">
                 <span className="stat-icon green">
-                  <Activity size={24} />
+                  <Code2 size={24} />
                 </span>
-                <span className="delta">Max {connectedProfile.maxRating || 0}</span>
+                <span className="delta">GitHub</span>
               </div>
-              <p>Rating</p>
-              <strong>{connectedProfile.rating || 0}</strong>
-              <span>Current platform rating</span>
+              <p>Public Repos</p>
+              <strong>{totalRepos}</strong>
+              <span>Repositories visible on GitHub</span>
             </article>
 
             <article className="stat-card">
               <div className="stat-top">
                 <span className="stat-icon purple">
-                  <Globe2 size={24} />
+                  <Trophy size={24} />
                 </span>
               </div>
-              <p>Submissions</p>
-              <strong>{connectedProfile.submissionsCount || 0}</strong>
-              <span>{connectedProfile.attemptedCount || 0} attempted problems</span>
+              <p>Best Rating</p>
+              <strong>{bestRating}</strong>
+              <span>Highest connected contest rating</span>
             </article>
           </div>
 
@@ -220,106 +172,115 @@ const Dashboard = () => {
               <div className="section-title">
                 <div>
                   <h2>
-                    <Trophy size={24} />
-                    Contest Ratings
+                    <BarChart3 size={24} />
+                    Platform Summary
                   </h2>
-                  <p>Contests: <strong>{connectedProfile.contestsCount || 0}</strong></p>
-                </div>
-                <span className="max-pill">Max: {connectedProfile.maxRating || 0}</span>
-              </div>
-
-              <div className="chart-area" aria-label="Contest rating line chart">
-                <svg viewBox="0 0 760 250" role="img">
-                  <path
-                    d="M40 175 C130 150 170 150 220 154 C300 164 335 168 405 126 C475 88 555 88 715 72"
-                    fill="none"
-                    stroke="#f59e0b"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                  />
-                  {[40, 180, 320, 460, 600, 740].map((x, index) => (
-                    <circle
-                      key={x}
-                      cx={index === 0 ? 40 : x - 20}
-                      cy={[175, 152, 165, 126, 98, 72][index]}
-                      r="6"
-                      fill="#f59e0b"
-                    />
-                  ))}
-                </svg>
-                <div className="chart-labels">
-                  <span>Jan</span>
-                  <span>Feb</span>
-                  <span>Mar</span>
-                  <span>Apr</span>
-                  <span>May</span>
-                  <span>Jun</span>
+                  <p>Keep this page light. Use detail pages later for deeper insights.</p>
                 </div>
               </div>
 
-              <div className="medal-grid">
-                <div>
-                  <Trophy size={20} />
-                  <span>Contribution</span>
-                  <strong>{connectedProfile.contribution || 0}</strong>
-                </div>
-                <div>
-                  <Award size={20} />
-                  <span>Friends</span>
-                  <strong>{connectedProfile.friendOfCount || 0}</strong>
-                </div>
-                <div>
-                  <Award size={20} />
-                  <span>Platforms</span>
-                  <strong>1</strong>
-                </div>
+              <div className="summary-platform-list">
+                {profiles.map((profile) => (
+                  <article className="summary-platform-card" key={profile._id}>
+                    <div className="summary-platform-head">
+                      <img src={profile.avatar || profile.titlePhoto} alt={`${profile.handle} avatar`} />
+                      <div>
+                        <span>{getPlatformLabel(profile.platform)}</span>
+                        <strong>{profile.handle}</strong>
+                      </div>
+                    </div>
+
+                    {profile.platform === "github" ? (
+                      <div className="mini-stats">
+                        <span>
+                          <BookOpen size={15} />
+                          {profile.solvedCount || 0} repos
+                        </span>
+                        <span>
+                          <Star size={15} />
+                          {profile.rawData?.totalStars || 0} stars
+                        </span>
+                        <span>
+                          <GitFork size={15} />
+                          {profile.rawData?.totalForks || 0} forks
+                        </span>
+                      </div>
+                    ) : profile.platform === "leetcode" ? (
+                      <div className="mini-stats">
+                        <span>
+                          <Trophy size={15} />
+                          {profile.rating || profile.rawData?.contestRating || 0} rating
+                        </span>
+                        <span>
+                          <BookOpen size={15} />
+                          {profile.solvedCount || 0} solved
+                        </span>
+                        <span>
+                          <Activity size={15} />
+                          {profile.contestsCount || 0} contests
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="mini-stats">
+                        <span>
+                          <Trophy size={15} />
+                          {profile.rating || 0} rating
+                        </span>
+                        <span>
+                          <BookOpen size={15} />
+                          {profile.solvedCount || 0} recent solved
+                        </span>
+                        <span>
+                          <Activity size={15} />
+                          {profile.contestsCount || 0} contests
+                        </span>
+                      </div>
+                    )}
+                  </article>
+                ))}
               </div>
             </section>
 
             <section className="badges-card">
               <div className="section-title">
                 <h2>
-                  <Award size={24} />
-                  Profile Badges
+                  <Zap size={24} />
+                  Quick Insights
                 </h2>
               </div>
 
               <div className="badge-grid">
                 <div className="badge-tile orange">
-                  <Flame size={30} />
-                  <strong>{connectedProfile.rank || "Unrated"}</strong>
-                  <span>Rank</span>
+                  <Star size={30} />
+                  <strong>{totalStars}</strong>
+                  <span>GitHub Stars</span>
                 </div>
                 <div className="badge-tile lime">
-                  <Zap size={30} />
-                  <strong>{connectedProfile.solvedCount || 0}</strong>
-                  <span>Solved</span>
+                  <Users size={30} />
+                  <strong>{githubProfile?.contestsCount || 0}</strong>
+                  <span>GitHub Followers</span>
                 </div>
                 <div className="badge-tile purple">
-                  <Award size={30} />
-                  <strong>{connectedProfile.maxRank || "Max"}</strong>
-                  <span>Best Rank</span>
+                  <Trophy size={30} />
+                  <strong>{codeforcesProfile?.rank || "N/A"}</strong>
+                  <span>CF Rank</span>
                 </div>
                 <div className="badge-tile teal">
-                  <ShieldCheck size={30} />
-                  <strong>{connectedProfile.country || "Unknown"}</strong>
-                  <span>Country</span>
+                  <BookOpen size={30} />
+                  <strong>{codeforcesProfile?.attemptedCount || 0}</strong>
+                  <span>CF Attempted</span>
                 </div>
                 <div className="badge-tile blue">
                   <Code2 size={30} />
-                  <strong>{connectedProfile.handle}</strong>
-                  <span>Handle</span>
+                  <strong>{githubProfile?.rawData?.languages?.length || 0}</strong>
+                  <span>Languages</span>
                 </div>
                 <div className="badge-tile pink">
-                  <Star size={30} />
-                  <strong>{connectedProfile.organization || "Coder"}</strong>
-                  <span>Organization</span>
+                  <Globe2 size={30} />
+                  <strong>{profiles.length}/2</strong>
+                  <span>Available</span>
                 </div>
               </div>
-
-              <a className="ghost-button as-link" href={connectedProfile.profileUrl} target="_blank">
-                Open Profile
-              </a>
             </section>
           </div>
         </>
