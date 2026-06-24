@@ -1,20 +1,10 @@
-import {
-  Activity,
-  BarChart3,
-  BookOpen,
-  Code2,
-  GitFork,
-  Link as LinkIcon,
-  Loader2,
-  Plus,
-  Star,
-  Trash2,
-  Trophy,
-  Users
-} from "lucide-react";
+import { Activity, Code2, Loader2, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api/client";
+import GithubCard from "../components/GithubCard";
+import CodeforcesCard from "../components/CodeforcesCard";
+import LeetcodeCard from "../components/LeetcodeCard";
 
 const platformOptions = {
   github: {
@@ -24,74 +14,17 @@ const platformOptions = {
   codeforces: {
     label: "Codeforces",
     placeholder: "https://codeforces.com/profile/username"
+  },
+  leetcode: {
+    label: "LeetCode",
+    placeholder: "https://leetcode.com/username"
+  },
+  gfg: {
+    label: "GeeksforGeeks",
+    placeholder: "https://auth.geeksforgeeks.org/user/username"
   }
 };
 
-const getProfileDescription = (profile) => {
-  if (profile.platform === "github") {
-    return profile.rawData?.user?.bio || "No GitHub bio available.";
-  }
-
-  return `${profile.rank || "unrated"} rating profile with ${
-    profile.solvedCount || 0
-  } solved problems in the latest fetched submissions.`;
-};
-
-const getProfileStats = (profile) => {
-  const stats = Array.isArray(profile.stats?.overview) ? profile.stats.overview : [];
-
-  if (stats.length > 0) {
-    if (profile.platform === "github") {
-      return stats.slice(0, 4).map((stat) => {
-        const iconMap = {
-          repos: BookOpen,
-          followers: Users,
-          following: Users,
-          stars: Star,
-          forks: GitFork,
-          languages: Code2
-        };
-
-        return {
-          icon: iconMap[stat.key] || BarChart3,
-          label: `${stat.value} ${stat.label.toLowerCase()}`
-        };
-      });
-    }
-
-    return stats.slice(0, 4).map((stat) => {
-      const iconMap = {
-        rating: Trophy,
-        maxRating: BarChart3,
-        solved: BookOpen,
-        attempted: Activity,
-        contests: Activity,
-        submissions: Code2
-      };
-
-      return {
-        icon: iconMap[stat.key] || BarChart3,
-        label: `${stat.value} ${stat.label.toLowerCase()}`
-      };
-    });
-  }
-
-  if (profile.platform === "github") {
-    return [
-      { icon: BookOpen, label: `${profile.solvedCount || 0} repos` },
-      { icon: Users, label: `${profile.contestsCount || 0} followers` },
-      { icon: Star, label: `${profile.rawData?.totalStars || 0} stars` },
-      { icon: GitFork, label: `${profile.rawData?.totalForks || 0} forks` }
-    ];
-  }
-
-  return [
-    { icon: Trophy, label: `${profile.rating || 0} rating` },
-    { icon: BarChart3, label: `${profile.maxRating || 0} max` },
-    { icon: BookOpen, label: `${profile.solvedCount || 0} recent solved` },
-    { icon: Activity, label: `${profile.contestsCount || 0} contests` }
-  ];
-};
 
 const Platforms = () => {
   const navigate = useNavigate();
@@ -102,6 +35,7 @@ const Platforms = () => {
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [removingId, setRemovingId] = useState("");
+  const [refreshingId, setRefreshingId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -176,6 +110,22 @@ const Platforms = () => {
     }
   };
 
+  const refreshProfile = async (profileId) => {
+    setError("");
+    setSuccess("");
+
+    try {
+      setRefreshingId(profileId);
+      const response = await api.put(`/profiles/${profileId}/refresh`);
+      setProfiles(response.data.profiles || []);
+      setSuccess("Profile refreshed successfully");
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not refresh profile");
+    } finally {
+      setRefreshingId("");
+    }
+  };
+
   if (loading) {
     return (
       <section className="simple-panel">
@@ -208,7 +158,7 @@ const Platforms = () => {
         </div>
         <div>
           <span>Available Now</span>
-          <strong>GitHub, Codeforces</strong>
+          <strong>GitHub, Codeforces, Leetcode, GFG</strong>
         </div>
       </section>
 
@@ -227,50 +177,44 @@ const Platforms = () => {
             </div>
           ) : (
             <div className="connected-list">
-              {profiles.map((profile) => (
-                <article className="connected-card" key={profile._id}>
-                  <img src={profile.avatar || profile.titlePhoto} alt={`${profile.handle} avatar`} />
-                  <div className="connected-main">
-                    <span className="profile-platform">
-                      <Code2 size={16} />
-                      {platformOptions[profile.platform]?.label || profile.platform}
-                    </span>
-                    <h3>{profile.firstName || profile.handle}</h3>
-                    <p>{getProfileDescription(profile)}</p>
-                    <div className="mini-stats">
-                      {getProfileStats(profile).map((stat) => {
-                        const Icon = stat.icon;
+              {profiles.map((profile) => {
+                switch (profile.platform) {
+                  case "github":
+                    return (
+                      <GithubCard
+                        key={profile._id}
+                        profile={profile}
+                        removeProfile={removeProfile}
+                        removingId={removingId}
+                      />
+                    );
 
-                        return (
-                          <span key={stat.label}>
-                            <Icon size={15} />
-                            {stat.label}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="connected-actions">
-                    <a className="ghost-compact" href={profile.profileUrl} target="_blank">
-                      <LinkIcon size={16} />
-                      Open
-                    </a>
-                    <button
-                      className="danger-button"
-                      type="button"
-                      onClick={() => removeProfile(profile._id)}
-                      disabled={removingId === profile._id}
-                    >
-                      {removingId === profile._id ? (
-                        <Loader2 className="spin" size={16} />
-                      ) : (
-                        <Trash2 size={16} />
-                      )}
-                      Remove
-                    </button>
-                  </div>
-                </article>
-              ))}
+                  case "codeforces":
+                    return (
+                      <CodeforcesCard
+                        key={profile._id}
+                        profile={profile}
+                        removeProfile={removeProfile}
+                        removingId={removingId}
+                      />
+                    );
+
+                  case "leetcode":
+                    return (
+                      <LeetcodeCard
+                        key={profile._id}
+                        profile={profile}
+                        refreshProfile={refreshProfile}
+                        refreshingId={refreshingId}
+                        removeProfile={removeProfile}
+                        removingId={removingId}
+                      />
+                    );
+
+                  default:
+                    return null;
+                }
+              })}
             </div>
           )}
         </section>
@@ -297,6 +241,8 @@ const Platforms = () => {
               >
                 <option value="github">GitHub</option>
                 <option value="codeforces">Codeforces</option>
+                <option value="leetcode">LeetCode</option>
+                <option value="gfg">GeeksforGeeks</option>
               </select>
             </label>
 
@@ -325,11 +271,11 @@ const Platforms = () => {
           {error && <p className="form-error panel-message">{error}</p>}
           {success && <p className="form-success panel-message">{success}</p>}
 
-          <div className="platform-roadmap">
+          {/* <div className="platform-roadmap">
             <strong>Coming next</strong>
             <span>LeetCode</span>
             <span>GFG</span>
-          </div>
+          </div> */}
         </section>
       </div>
 

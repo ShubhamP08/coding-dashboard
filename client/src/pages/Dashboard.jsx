@@ -19,6 +19,7 @@ import api from "../api/client";
 const getPlatformLabel = (platform) => {
   if (platform === "github") return "GitHub";
   if (platform === "codeforces") return "Codeforces";
+  if (platform === "leetcode") return "LeetCode";
   return platform;
 };
 
@@ -35,15 +36,26 @@ const Dashboard = () => {
     () => profiles.find((profile) => profile.platform === "codeforces"),
     [profiles]
   );
+  const leetcodeProfile = useMemo(
+    () => profiles.find((profile) => profile.platform === "leetcode"),
+    [profiles]
+  );
 
   const totalSolved = profiles.reduce((sum, profile) => {
-    if (profile.platform === "codeforces") return sum + (profile.solvedCount || 0);
+    if (profile.platform === "codeforces" || profile.platform === "leetcode") {
+      return sum + (profile.solvedCount || 0);
+    }
+
     return sum;
   }, 0);
 
   const totalRepos = githubProfile?.solvedCount || 0;
   const totalStars = githubProfile?.rawData?.totalStars || 0;
-  const bestRating = codeforcesProfile?.maxRating || codeforcesProfile?.rating || 0;
+  const bestRating =
+    codeforcesProfile?.maxRating ||
+    codeforcesProfile?.rating ||
+    leetcodeProfile?.rating ||
+    0;
 
   useEffect(() => {
     const loadUser = async () => {
@@ -126,9 +138,9 @@ const Dashboard = () => {
                 </span>
                 <span className="delta">Codeforces</span>
               </div>
-              <p>Recent Solved</p>
+              <p>Problems Solved</p>
               <strong>{totalSolved}</strong>
-              <span>From latest fetched Codeforces submissions</span>
+              <span>Across Codeforces and LeetCode</span>
             </article>
 
             <article className="stat-card">
@@ -151,7 +163,7 @@ const Dashboard = () => {
               </div>
               <p>Best Rating</p>
               <strong>{bestRating}</strong>
-              <span>Highest Codeforces rating</span>
+              <span>Highest connected contest rating</span>
             </article>
           </div>
 
@@ -191,6 +203,21 @@ const Dashboard = () => {
                         <span>
                           <GitFork size={15} />
                           {profile.rawData?.totalForks || 0} forks
+                        </span>
+                      </div>
+                    ) : profile.platform === "leetcode" ? (
+                      <div className="mini-stats">
+                        <span>
+                          <Trophy size={15} />
+                          {profile.rating || profile.rawData?.contestRating || 0} rating
+                        </span>
+                        <span>
+                          <BookOpen size={15} />
+                          {profile.solvedCount || 0} solved
+                        </span>
+                        <span>
+                          <Activity size={15} />
+                          {profile.contestsCount || 0} contests
                         </span>
                       </div>
                     ) : (

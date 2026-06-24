@@ -2,24 +2,38 @@ const CodingProfile = require("../models/CodingProfile");
 const User = require("../models/User");
 const { fetchCodeforcesProfile } = require("../services/codeforces.service");
 const { fetchGithubProfile } = require("../services/github.service");
+const { fetchLeetcodeProfile } = require("../services/leetcode.service");
 const { extractCodeforcesHandle } = require("../services/profileNormalizer.service");
+
 
 const isValidationError = (error) =>
   error.message.includes("required") || error.message.includes("Invalid");
 
-const supportedPlatforms = ["github", "codeforces"];
+const supportedPlatforms = ["github", "codeforces", "leetcode"];
 
-const fetchProfileByPlatform = async (platform, profileLink) => {
-  if (platform === "github") {
-    return fetchGithubProfile(profileLink);
+const fetchProfileByPlatform = async (
+  platform,
+  profileLink
+) => {
+  switch (platform) {
+    case "github":
+      return fetchGithubProfile(profileLink);
+
+    case "codeforces": {
+      const codeforcesHandle =
+        extractCodeforcesHandle(profileLink);
+
+      return fetchCodeforcesProfile(
+        codeforcesHandle
+      );
+    }
+
+    case "leetcode":
+      return fetchLeetcodeProfile(profileLink);
+
+    default:
+      throw new Error("Invalid platform");
   }
-
-  if (platform === "codeforces") {
-    const codeforcesHandle = extractCodeforcesHandle(profileLink);
-    return fetchCodeforcesProfile(codeforcesHandle);
-  }
-
-  throw new Error("Invalid platform");
 };
 
 const getCodeforcesProfile = async (req, res) => {
@@ -69,7 +83,7 @@ const connectProfile = async (req, res) => {
 
     if (!supportedPlatforms.includes(selectedPlatform)) {
       return res.status(400).json({
-        message: "Only GitHub and Codeforces are available right now"
+        message: "Supported platforms: GitHub, Codeforces, LeetCode"
       });
     }
 
@@ -190,9 +204,68 @@ const removeProfile = async (req, res) => {
   }
 };
 
+const refreshProfile = async (req, res) => {
+  try {
+    const { profileId } = req.params;
+
+    const user = await User.findById(req.user.id).populate("profiles");
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found"
+      });
+    }
+
+    const existingProfile = user.profiles.find(
+      (profile) => profile._id.toString() === profileId
+    );
+
+    if (!existingProfile) {
+      return res.status(404).json({
+        message: "Profile not connected to this account"
+      });
+    }
+
+    if (!supportedPlatforms.includes(existingProfile.platform)) {
+      return res.status(400).json({
+        message: "Unsupported platform"
+      });
+    }
+
+    const profileData = await fetchProfileByPlatform(
+      existingProfile.platform,
+      existingProfile.handle
+    );
+
+    const refreshedProfile = await CodingProfile.findByIdAndUpdate(
+      existingProfile._id,
+      profileData,
+      {
+        new: true
+      }
+    );
+
+    const refreshedUser = await User.findById(req.user.id).populate("profiles");
+
+    return res.status(200).json({
+      message: "Profile refreshed successfully",
+      data: refreshedProfile,
+      profiles: refreshedUser?.profiles || []
+    });
+  } catch (error) {
+    const statusCode = isValidationError(error) ? 400 : 500;
+
+    return res.status(statusCode).json({
+      message: "Failed to refresh profile",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getCodeforcesProfile,
   connectProfile,
   getMyProfiles,
-  removeProfile
+  removeProfile,
+  refreshProfile
 };

@@ -1,17 +1,4 @@
-import {
-  Activity,
-  ArrowRight,
-  BarChart3,
-  BookOpen,
-  Code2,
-  ExternalLink,
-  GitFork,
-  Globe2,
-  Loader2,
-  Star,
-  Trophy,
-  Users
-} from "lucide-react";
+import {Activity,ArrowRight,BarChart3,BookOpen,Code2,ExternalLink,GitFork,Globe2,Loader2,Star,Trophy,Users} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api/client";

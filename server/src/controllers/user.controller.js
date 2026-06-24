@@ -1,5 +1,7 @@
 const User = require("../models/User");
+const CodingProfile = require("../models/CodingProfile");
 const bcrypt = require("bcryptjs");
+const { fetchLeetcodeProfile } = require("../services/leetcode.service");
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -58,6 +60,32 @@ const buildMissingStats = (profile) => {
   };
 
   return profile;
+};
+
+const shouldRefreshLeetcodeStats = (profile) => {
+  if (profile.platform !== "leetcode") return false;
+
+  const easySolved = profile.stats?.easySolved || profile.rawData?.easySolved || 0;
+  const mediumSolved = profile.stats?.mediumSolved || profile.rawData?.mediumSolved || 0;
+  const hardSolved = profile.stats?.hardSolved || profile.rawData?.hardSolved || 0;
+
+  return (profile.solvedCount || 0) === 0 && easySolved === 0 && mediumSolved === 0 && hardSolved === 0;
+};
+
+const refreshStaleLeetcodeProfile = async (profile) => {
+  if (!shouldRefreshLeetcodeStats(profile)) {
+    return profile;
+  }
+
+  try {
+    const profileData = await fetchLeetcodeProfile(profile.handle);
+
+    return CodingProfile.findByIdAndUpdate(profile._id, profileData, {
+      new: true
+    });
+  } catch {
+    return profile;
+  }
 };
 
 const register = async (req, res) => {
@@ -120,6 +148,7 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log("Login request received:", { email, password }); // Debugging log
     const normalizedEmail = email?.trim().toLowerCase();
 
     if (!normalizedEmail || !password) {
@@ -166,12 +195,19 @@ const getMe = async (req, res) => {
       });
     }
 
-    const profilesWithStats = user.profiles.map((profile) => {
-      if (profile.platform === "github") {
-        return buildMissingStats(profile);
-      }
-      return profile;
-    });
+    const profilesWithStats = await Promise.all(
+      user.profiles.map(async (profile) => {
+        if (profile.platform === "github") {
+          return buildMissingStats(profile);
+        }
+
+        if (profile.platform === "leetcode") {
+          return refreshStaleLeetcodeProfile(profile);
+        }
+
+        return profile;
+      })
+    );
 
     return res.status(200).json({
       success: true,
