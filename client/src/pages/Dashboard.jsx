@@ -3,11 +3,14 @@ import {
   BarChart3,
   BookOpen,
   Code2,
+  Flame,
   GitFork,
   Globe2,
-  MessageSquare,
   Plus,
+  Share2,
   Star,
+  Target,
+  TrendingUp,
   Trophy,
   Users,
   Zap
@@ -15,6 +18,9 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api/client";
+import RatingHistoryChart from "../components/RatingHistoryChart";
+import ActivityHeatmap from "../components/ActivityHeatmap";
+import DevCard from "../components/DevCard";
 
 const getPlatformLabel = (platform) => {
   if (platform === "github") return "GitHub";
@@ -23,53 +29,110 @@ const getPlatformLabel = (platform) => {
   return platform;
 };
 
+const formatNum = (v) =>
+  new Intl.NumberFormat("en-US").format(v || 0);
+
+// Compute current streak from merged CF + LC calendar
+const computeCurrentStreak = (lcProfile, cfProfile) => {
+  const map = {};
+
+  const lcCal = lcProfile?.rawData?.submissionCalendar;
+  if (lcCal) {
+    let cal = lcCal;
+    if (typeof cal === "string") {
+      try { cal = JSON.parse(cal); } catch { cal = {}; }
+    }
+    Object.entries(cal).forEach(([ts]) => {
+      const d = new Date(Number(ts) * 1000);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      map[key] = (map[key] || 0) + 1;
+    });
+  }
+
+  const cfSubs = cfProfile?.rawData?.recentSubmissions || [];
+  cfSubs.forEach((sub) => {
+    if (!sub.createdAt) return;
+    const d = new Date(sub.createdAt * 1000);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    map[key] = (map[key] || 0) + 1;
+  });
+
+  let streak = 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const check = new Date(today);
+  while (true) {
+    const key = `${check.getFullYear()}-${String(check.getMonth() + 1).padStart(2, "0")}-${String(check.getDate()).padStart(2, "0")}`;
+    if ((map[key] || 0) > 0) {
+      streak++;
+      check.setDate(check.getDate() - 1);
+    } else break;
+  }
+  return streak;
+};
+
+const getRankColor = (rank) => {
+  if (!rank) return "#94a3b8";
+  const r = rank.toLowerCase();
+  if (r.includes("grandmaster") || r.includes("international")) return "#ef4444";
+  if (r.includes("master")) return "#f97316";
+  if (r.includes("candidate")) return "#a855f7";
+  if (r.includes("expert")) return "#3b82f6";
+  if (r.includes("specialist")) return "#14b8a6";
+  return "#94a3b8";
+};
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const [profiles, setProfiles] = useState([]);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [showDevCard, setShowDevCard] = useState(false);
 
   const githubProfile = useMemo(
-    () => profiles.find((profile) => profile.platform === "github"),
+    () => profiles.find((p) => p.platform === "github"),
     [profiles]
   );
   const codeforcesProfile = useMemo(
-    () => profiles.find((profile) => profile.platform === "codeforces"),
+    () => profiles.find((p) => p.platform === "codeforces"),
     [profiles]
   );
   const leetcodeProfile = useMemo(
-    () => profiles.find((profile) => profile.platform === "leetcode"),
+    () => profiles.find((p) => p.platform === "leetcode"),
     [profiles]
   );
 
-  const totalSolved = profiles.reduce((sum, profile) => {
-    if (profile.platform === "codeforces" || profile.platform === "leetcode") {
-      return sum + (profile.solvedCount || 0);
-    }
-
+  // Aggregated stats
+  const totalSolved = profiles.reduce((sum, p) => {
+    if (p.platform === "codeforces" || p.platform === "leetcode")
+      return sum + (p.solvedCount || 0);
     return sum;
   }, 0);
 
   const totalRepos = githubProfile?.solvedCount || 0;
   const totalStars = githubProfile?.rawData?.totalStars || 0;
-  const bestRating =
-    codeforcesProfile?.maxRating ||
-    codeforcesProfile?.rating ||
-    leetcodeProfile?.rating ||
-    0;
+  const bestCFRating = codeforcesProfile?.maxRating || codeforcesProfile?.rating || 0;
+  const lcRating = leetcodeProfile?.rating || leetcodeProfile?.rawData?.contestRating || 0;
+  const bestRating = Math.max(bestCFRating, lcRating);
+
+  const currentStreak = useMemo(
+    () => computeCurrentStreak(leetcodeProfile, codeforcesProfile),
+    [leetcodeProfile, codeforcesProfile]
+  );
+
+  const lcAcceptance = leetcodeProfile?.rawData?.acceptanceRate || leetcodeProfile?.stats?.acceptanceRate || 0;
 
   useEffect(() => {
     const loadUser = async () => {
       try {
         const response = await api.get("/users/me");
         setProfiles(response.data.user?.profiles || []);
-      } catch (err) {
+      } catch {
         localStorage.removeItem("token");
         navigate("/login");
       } finally {
         setInitialLoading(false);
       }
     };
-
     loadUser();
   }, [navigate]);
 
@@ -92,12 +155,26 @@ const Dashboard = () => {
       <div className="page-heading">
         <div>
           <h1>Dashboard Overview</h1>
-          <p>A quick summary across your connected coding platforms.</p>
+          <p>A complete view across all your connected coding platforms.</p>
         </div>
-        <Link className="ghost-compact" to="/platforms">
-          <Plus size={16} />
-          Manage Platforms
-        </Link>
+        <div style={{ display: "flex", gap: 10 }}>
+          {profiles.length > 0 && (
+            <button
+              id="share-dev-card-btn"
+              type="button"
+              className="ghost-compact"
+              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              onClick={() => setShowDevCard(true)}
+            >
+              <Share2 size={16} />
+              Share Card
+            </button>
+          )}
+          <Link className="ghost-compact" to="/platforms" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <Plus size={16} />
+            Manage Platforms
+          </Link>
+        </div>
       </div>
 
       {profiles.length === 0 && (
@@ -107,8 +184,8 @@ const Dashboard = () => {
           </span>
           <h2>Connect your first platform</h2>
           <p>
-            Start with GitHub or Codeforces. Once connected, this page becomes your
-            summary dashboard and platform details can live on separate pages.
+            Start with GitHub, Codeforces, or LeetCode. Once connected, this page becomes your
+            command centre — rating chart, activity heatmap, and more.
           </p>
           <Link className="primary-button as-link" to="/platforms">
             Connect Platform
@@ -118,12 +195,11 @@ const Dashboard = () => {
 
       {profiles.length > 0 && (
         <>
-          <div className="stats-grid">
+          {/* ── Stats Grid (6 cards) ── */}
+          <div className="stats-grid stats-grid-6">
             <article className="stat-card">
               <div className="stat-top">
-                <span className="stat-icon blue">
-                  <Globe2 size={24} />
-                </span>
+                <span className="stat-icon blue"><Globe2 size={22} /></span>
                 <span className="delta">Active</span>
               </div>
               <p>Platforms</p>
@@ -133,152 +209,210 @@ const Dashboard = () => {
 
             <article className="stat-card">
               <div className="stat-top">
-                <span className="stat-icon orange">
-                  <BookOpen size={24} />
-                </span>
-                <span className="delta">Codeforces</span>
+                <span className="stat-icon orange"><BookOpen size={22} /></span>
               </div>
               <p>Problems Solved</p>
-              <strong>{totalSolved}</strong>
-              <span>Across Codeforces and LeetCode</span>
+              <strong>{formatNum(totalSolved)}</strong>
+              <span>Across CF + LeetCode</span>
             </article>
 
             <article className="stat-card">
               <div className="stat-top">
-                <span className="stat-icon green">
-                  <Code2 size={24} />
-                </span>
-                <span className="delta">GitHub</span>
-              </div>
-              <p>Public Repos</p>
-              <strong>{totalRepos}</strong>
-              <span>Repositories visible on GitHub</span>
-            </article>
-
-            <article className="stat-card">
-              <div className="stat-top">
-                <span className="stat-icon purple">
-                  <Trophy size={24} />
-                </span>
+                <span className="stat-icon purple"><Trophy size={22} /></span>
               </div>
               <p>Best Rating</p>
-              <strong>{bestRating}</strong>
-              <span>Highest connected contest rating</span>
+              <strong>{bestRating || "—"}</strong>
+              <span>{bestCFRating >= lcRating ? "Codeforces" : "LeetCode"} peak</span>
+            </article>
+
+            <article className="stat-card">
+              <div className="stat-top">
+                <span className="stat-icon green"><Code2 size={22} /></span>
+              </div>
+              <p>Public Repos</p>
+              <strong>{formatNum(totalRepos)}</strong>
+              <span>GitHub repositories</span>
+            </article>
+
+            <article className="stat-card">
+              <div className="stat-top">
+                <span className="stat-icon" style={{ color: "#f97316", background: "rgba(249,115,22,0.13)" }}>
+                  <Flame size={22} />
+                </span>
+              </div>
+              <p>Current Streak</p>
+              <strong>{currentStreak}d</strong>
+              <span>Days active in a row</span>
+            </article>
+
+            <article className="stat-card">
+              <div className="stat-top">
+                <span className="stat-icon" style={{ color: "#facc15", background: "rgba(250,204,21,0.12)" }}>
+                  <Star size={22} />
+                </span>
+              </div>
+              <p>GitHub Stars</p>
+              <strong>{formatNum(totalStars)}</strong>
+              <span>Total across repos</span>
             </article>
           </div>
 
+          {/* ── Rating History Chart ── */}
+          {(codeforcesProfile || leetcodeProfile) && (
+            <section className="chart-section-card">
+              <div className="section-title">
+                <div>
+                  <h2>
+                    <TrendingUp size={22} />
+                    Rating History
+                  </h2>
+                  <p>
+                    {codeforcesProfile && leetcodeProfile
+                      ? "Codeforces (blue line) + LeetCode current rating (orange dashed reference)."
+                      : codeforcesProfile
+                      ? "Codeforces rating progression across rated contests."
+                      : "LeetCode current contest rating."}
+                  </p>
+                </div>
+              </div>
+              <RatingHistoryChart
+                cfProfile={codeforcesProfile}
+                lcProfile={leetcodeProfile}
+              />
+            </section>
+          )}
+
+          {/* ── Activity Heatmap ── */}
+          {(codeforcesProfile || leetcodeProfile) && (
+            <section className="chart-section-card">
+              <div className="section-title">
+                <div>
+                  <h2>
+                    <Activity size={22} />
+                    Activity Heatmap
+                  </h2>
+                  <p>Daily solve activity over the past 52 weeks (Codeforces + LeetCode combined).</p>
+                </div>
+              </div>
+              <ActivityHeatmap
+                lcProfile={leetcodeProfile}
+                cfProfile={codeforcesProfile}
+              />
+            </section>
+          )}
+
+          {/* ── Bottom Grid: Platform Summary + Quick Insights ── */}
           <div className="dashboard-grid">
+            {/* Platform Summary */}
             <section className="chart-card">
               <div className="section-title">
                 <div>
                   <h2>
-                    <BarChart3 size={24} />
+                    <BarChart3 size={22} />
                     Platform Summary
                   </h2>
-                  <p>Keep this page light. Use detail pages later for deeper insights.</p>
+                  <p>Key stats for each connected account.</p>
                 </div>
               </div>
 
               <div className="summary-platform-list">
                 {profiles.map((profile) => (
-                  <article className="summary-platform-card" key={profile._id}>
+                  <Link
+                    to={`/profile/${profile.platform}`}
+                    className="summary-platform-card summary-platform-card-link"
+                    key={profile._id}
+                  >
                     <div className="summary-platform-head">
-                      <img src={profile.avatar || profile.titlePhoto} alt={`${profile.handle} avatar`} />
+                      <img
+                        src={profile.avatar || profile.titlePhoto}
+                        alt={`${profile.handle} avatar`}
+                      />
                       <div>
                         <span>{getPlatformLabel(profile.platform)}</span>
                         <strong>{profile.handle}</strong>
                       </div>
+                      {profile.platform === "codeforces" && profile.rank && (
+                        <span
+                          className="cf-rank-badge"
+                          style={{
+                            color: getRankColor(profile.rank),
+                            background: `${getRankColor(profile.rank)}18`,
+                            border: `1px solid ${getRankColor(profile.rank)}44`,
+                          }}
+                        >
+                          {profile.rank}
+                        </span>
+                      )}
                     </div>
 
                     {profile.platform === "github" ? (
                       <div className="mini-stats">
-                        <span>
-                          <BookOpen size={15} />
-                          {profile.solvedCount || 0} repos
-                        </span>
-                        <span>
-                          <Star size={15} />
-                          {profile.rawData?.totalStars || 0} stars
-                        </span>
-                        <span>
-                          <GitFork size={15} />
-                          {profile.rawData?.totalForks || 0} forks
-                        </span>
+                        <span><BookOpen size={14} />{formatNum(profile.solvedCount)} repos</span>
+                        <span><Star size={14} />{formatNum(profile.rawData?.totalStars)} stars</span>
+                        <span><GitFork size={14} />{formatNum(profile.rawData?.totalForks)} forks</span>
+                        <span><Users size={14} />{formatNum(profile.friendOfCount)} followers</span>
                       </div>
                     ) : profile.platform === "leetcode" ? (
                       <div className="mini-stats">
-                        <span>
-                          <Trophy size={15} />
-                          {profile.rating || profile.rawData?.contestRating || 0} rating
-                        </span>
-                        <span>
-                          <BookOpen size={15} />
-                          {profile.solvedCount || 0} solved
-                        </span>
-                        <span>
-                          <Activity size={15} />
-                          {profile.contestsCount || 0} contests
-                        </span>
+                        <span><Trophy size={14} />{profile.rating || profile.rawData?.contestRating || 0} rating</span>
+                        <span><BookOpen size={14} />{formatNum(profile.solvedCount)} solved</span>
+                        <span><Activity size={14} />{profile.contestsCount || 0} contests</span>
+                        {lcAcceptance > 0 && <span><Target size={14} />{lcAcceptance}% acceptance</span>}
                       </div>
                     ) : (
                       <div className="mini-stats">
-                        <span>
-                          <Trophy size={15} />
-                          {profile.rating || 0} rating
+                        <span><Trophy size={14} />{profile.rating || 0} rating</span>
+                        <span style={{ color: getRankColor(profile.rank) }}>
+                          <Zap size={14} />{profile.maxRating || 0} peak
                         </span>
-                        <span>
-                          <BookOpen size={15} />
-                          {profile.solvedCount || 0} recent solved
-                        </span>
-                        <span>
-                          <Activity size={15} />
-                          {profile.contestsCount || 0} contests
-                        </span>
+                        <span><BookOpen size={14} />{formatNum(profile.solvedCount)} solved</span>
+                        <span><Activity size={14} />{profile.contestsCount || 0} contests</span>
                       </div>
                     )}
-                  </article>
+                  </Link>
                 ))}
               </div>
             </section>
 
+            {/* Quick Insights */}
             <section className="badges-card">
               <div className="section-title">
                 <h2>
-                  <Zap size={24} />
+                  <Zap size={22} />
                   Quick Insights
                 </h2>
               </div>
 
               <div className="badge-grid">
                 <div className="badge-tile orange">
-                  <Star size={30} />
-                  <strong>{totalStars}</strong>
+                  <Star size={28} />
+                  <strong>{formatNum(totalStars)}</strong>
                   <span>GitHub Stars</span>
                 </div>
                 <div className="badge-tile lime">
-                  <Users size={30} />
-                  <strong>{githubProfile?.contestsCount || 0}</strong>
-                  <span>GitHub Followers</span>
+                  <Users size={28} />
+                  <strong>{formatNum(githubProfile?.friendOfCount || 0)}</strong>
+                  <span>GH Followers</span>
                 </div>
                 <div className="badge-tile purple">
-                  <Trophy size={30} />
-                  <strong>{codeforcesProfile?.rank || "N/A"}</strong>
+                  <Trophy size={28} />
+                  <strong>{codeforcesProfile?.rank || "—"}</strong>
                   <span>CF Rank</span>
                 </div>
                 <div className="badge-tile teal">
-                  <BookOpen size={30} />
-                  <strong>{codeforcesProfile?.attemptedCount || 0}</strong>
+                  <BookOpen size={28} />
+                  <strong>{formatNum(codeforcesProfile?.attemptedCount || 0)}</strong>
                   <span>CF Attempted</span>
                 </div>
                 <div className="badge-tile blue">
-                  <Code2 size={30} />
-                  <strong>{githubProfile?.rawData?.languages?.length || 0}</strong>
-                  <span>Languages</span>
+                  <Flame size={28} />
+                  <strong>{currentStreak}d</strong>
+                  <span>Streak</span>
                 </div>
                 <div className="badge-tile pink">
-                  <Globe2 size={30} />
-                  <strong>{profiles.length}/2</strong>
-                  <span>Available</span>
+                  <Target size={28} />
+                  <strong>{lcAcceptance ? `${lcAcceptance}%` : "—"}</strong>
+                  <span>LC Acceptance</span>
                 </div>
               </div>
             </section>
@@ -286,9 +420,10 @@ const Dashboard = () => {
         </>
       )}
 
-      <button className="chat-button" type="button" aria-label="Open chat">
-        <MessageSquare size={28} />
-      </button>
+      {/* Dev Card Modal */}
+      {showDevCard && (
+        <DevCard profiles={profiles} onClose={() => setShowDevCard(false)} />
+      )}
     </section>
   );
 };

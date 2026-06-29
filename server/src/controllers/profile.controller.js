@@ -262,10 +262,61 @@ const refreshProfile = async (req, res) => {
   }
 };
 
+const refreshAllProfiles = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).populate("profiles");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const results = await Promise.all(
+      user.profiles.map(async (existingProfile) => {
+        if (!supportedPlatforms.includes(existingProfile.platform)) {
+          return existingProfile;
+        }
+
+        try {
+          const profileData = await fetchProfileByPlatform(
+            existingProfile.platform,
+            existingProfile.handle
+          );
+
+          const refreshed = await CodingProfile.findByIdAndUpdate(
+            existingProfile._id,
+            profileData,
+            { new: true }
+          );
+
+          return refreshed || existingProfile;
+        } catch (err) {
+          return existingProfile;
+        }
+      })
+    );
+
+    const refreshedUser = await User.findById(req.user.id).populate("profiles");
+
+    return res.status(200).json({
+      message: "All profiles refreshed",
+      profiles: refreshedUser?.profiles || []
+    });
+  } catch (error) {
+    const statusCode = isValidationError(error) ? 400 : 500;
+
+    return res.status(statusCode).json({
+      message: "Failed to refresh profiles",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getCodeforcesProfile,
   connectProfile,
   getMyProfiles,
   removeProfile,
   refreshProfile
+  ,
+  refreshAllProfiles
 };

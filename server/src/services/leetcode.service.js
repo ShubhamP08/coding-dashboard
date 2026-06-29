@@ -90,8 +90,60 @@ const fetchLeetcodeProfile = async (profileLink) => {
     axios.get(`${LEETCODE_API}/${username}/skill`)
   ]);
 
+  // If the external LEETCODE_API adapter isn't available, try LeetCode's
+  // public GraphQL endpoint as a fallback. This allows refresh to work
+  // even when `LEETCODE_API` isn't running locally.
   if (profileRes.status === "rejected") {
-    throw new Error("Could not fetch LeetCode profile");
+    try {
+      const gql = `query getProfile($username: String!) { matchedUser(username: $username) { username profile { realName userAvatar ranking } submitStats { acSubmissionNum { difficulty count } totalSubmissionNum { difficulty count } } submissionCalendar } }`;
+
+      const gqlRes = await axios.post(
+        "https://leetcode.com/graphql",
+        { query: gql, variables: { username } },
+        { headers: { "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Mozilla/5.0" } }
+      );
+
+      const matchedUser = gqlRes?.data?.data?.matchedUser;
+
+      if (!matchedUser) {
+        throw new Error("Could not fetch LeetCode profile");
+      }
+
+      // Map GraphQL response to shapes expected by the rest of the function
+      const profile = {
+        avatar: matchedUser.profile?.userAvatar || "",
+        name: matchedUser.profile?.realName || "",
+        ranking: matchedUser.profile?.ranking || ""
+      };
+
+      const submitStats = matchedUser.submitStats || {};
+
+      const solved = {
+        acSubmissionNum: submitStats.acSubmissionNum || [],
+        totalSubmissionNum: submitStats.totalSubmissionNum || []
+      };
+
+      const calendar = matchedUser.submissionCalendar || {};
+
+      const fullProfile = {
+        matchedUserStats: {
+          acSubmissionNum: solved.acSubmissionNum
+        },
+        totalSubmissions: solved.totalSubmissionNum
+      };
+
+      // Construct fulfilled-like results so downstream code remains unchanged
+      profileRes = { status: "fulfilled", value: { data: profile } };
+      fullProfileRes = { status: "fulfilled", value: { data: fullProfile } };
+      solvedRes = { status: "fulfilled", value: { data: solved } };
+      contestRes = { status: "fulfilled", value: { data: {} } };
+      submissionRes = { status: "fulfilled", value: { data: { recentSubmissions: [] } } };
+      calendarRes = { status: "fulfilled", value: { data: calendar } };
+      languageRes = { status: "fulfilled", value: { data: [] } };
+      skillRes = { status: "fulfilled", value: { data: [] } };
+    } catch (err) {
+      throw new Error("Could not fetch LeetCode profile");
+    }
   }
 
   const profile = getSettledData(profileRes, {});
@@ -134,6 +186,29 @@ const fetchLeetcodeProfile = async (profileLink) => {
     contest.contestGlobalRanking || contest.globalRanking || contest.ranking || 0;
   const attendedContests =
     contest.attendedContestsCount || contest.contestAttend || contest.contestsCount || 0;
+  const contestBadge = contest.contestBadges?.name || null;
+
+  // Normalise full contest participation history
+  // The /contest endpoint returns contestParticipation: an array ordered
+  // chronologically (oldest first) containing every rated contest.
+  // Each entry shape: { attended, rating, ranking, trendDirection,
+  //   problemsSolved, totalProblems, finishTimeInSeconds,
+  //   contest: { title, startTime } }
+  const rawContestHistory = Array.isArray(contest.contestParticipation)
+    ? contest.contestParticipation
+    : [];
+
+  const contestHistory = rawContestHistory
+    .filter((entry) => entry.attended && entry.contest?.startTime > 0)
+    .map((entry) => ({
+      title:            entry.contest.title || "",
+      startTime:        entry.contest.startTime,           // unix seconds
+      rating:           Math.round(entry.rating || 0),
+      ranking:          entry.ranking || 0,
+      trendDirection:   entry.trendDirection || "NONE",    // "UP" | "DOWN" | "NONE"
+      problemsSolved:   entry.problemsSolved || 0,
+      totalProblems:    entry.totalProblems || 0,
+    }));
   const submissionCalendar =
     calendar.submissionCalendar || fullProfile.submissionCalendar || calendar;
   const activeDays = countCalendarActiveDays(submissionCalendar);
@@ -160,6 +235,8 @@ const fetchLeetcodeProfile = async (profileLink) => {
       contestRating,
       contestRanking,
       attendedContests,
+      contestBadge,
+      contestHistory,
       acceptanceRate: solved.acceptanceRate || solved.acceptance_rate || 0,
       activeDays,
       recentSubmissions,
@@ -187,6 +264,8 @@ const fetchLeetcodeProfile = async (profileLink) => {
       contestRating,
       contestRanking,
       attendedContests,
+      contestBadge,
+      contestHistory,
       submissionCalendar,
       streak: calendar.streak || 0,
       activeDays,
