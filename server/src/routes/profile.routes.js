@@ -4,7 +4,8 @@ const {
   getCodeforcesProfile,
   getMyProfiles,
   refreshProfile,
-  removeProfile
+  removeProfile,
+  refreshAllProfiles
 } = require("../controllers/profile.controller");
 const jwtAuth = require("../middleware/jwt.middleware");
 

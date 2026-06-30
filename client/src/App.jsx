@@ -6,7 +6,7 @@ import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Platforms from "./pages/Platforms";
-import { Footer } from "./components/Footer";
+import AiMentor from "./pages/AiMentor";
 
 const RequireAuth = ({ children }) => {
   const token = localStorage.getItem("token");
@@ -24,7 +24,6 @@ function App() {
         element={
           <RequireAuth>
             <DashboardLayout />
-            <Footer/>
           </RequireAuth>
         }
       >
@@ -32,8 +31,9 @@ function App() {
         <Route path="platforms" element={<Platforms />} />
         <Route path="settings" element={<Settings />} />
         <Route path="profile/*" element={<PlatformDetail />} />
+        <Route path="ai-mentor" element={<AiMentor />} />
       </Route>
-      {/* <Route path="/" element={<Footer />}></Route> */}
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

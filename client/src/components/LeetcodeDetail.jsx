@@ -1,4 +1,5 @@
-import { BarChart3, CheckCircle, Code2, Flame, Trophy, Target, Clock3, Medal } from "lucide-react";
+import { BarChart3, CheckCircle, Code2, Flame, Trophy, Target, Clock3, Medal, TrendingUp } from "lucide-react";
+import LcRatingChart from "./LcRatingChart";
 
 const formatNumber = (value) => new Intl.NumberFormat("en-US").format(value || 0);
 
@@ -81,6 +82,18 @@ export default function LeetcodeDetail({ profile }) {
         <InsightChip icon={Flame} label="Streak" value={streak || 0} />
         <InsightChip icon={Target} label="Acceptance" value={`${acceptanceRate || 0}%`} />
       </div>
+
+      {/* LC Rating History Chart */}
+      <section className="detail-section detail-section-full">
+        <div className="section-title">
+          <h2>
+            <TrendingUp size={24} />
+            Contest Rating History
+          </h2>
+          <p>Full rating progression across every LeetCode rated contest.</p>
+        </div>
+        <LcRatingChart profile={profile} />
+      </section>
 
       <div className="detail-metrics-grid">
         <MetricCard icon={CheckCircle} label="Easy solved" value={easySolved} hint="Introductory problems completed" />
